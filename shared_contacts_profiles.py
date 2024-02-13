@@ -18,7 +18,7 @@
 
 """A script to manage Google Apps Domain Shared Contacts."""
 
-import cStringIO
+import io
 import codecs
 import copy
 import csv
@@ -88,7 +88,7 @@ def Chunks(iterable, size):
 
 def Log(line):
     """Prints a line to the standard output and flush it."""
-    print line
+    print (line)
     sys.stdout.flush()
 
 
@@ -301,7 +301,7 @@ class ContactsManager(object):
 
         ignored = [0]
 
-        def CsvLineToOperation((index, fields)):
+        def CsvLineToOperation(entry):
             """Maps a CSV line to an operation on a contact/profile.
 
             Args:
@@ -311,6 +311,8 @@ class ContactsManager(object):
               An action tuple (action, entry), where action is taken from the "Action"
               field and entry the contact GData entry built from the CSV line.
             """
+            index = entry[0]
+            fields = entry[1]
 
             action = fields.get('Action', DEFAULT_ACTION).lower()
             contact_id = fields.get('ID')
@@ -339,7 +341,7 @@ class ContactsManager(object):
                         try:
                             # Testing if it is a Profile
                             tempProfileEntry = self.GetProfile(profile_short_id)
-                        except gdata.client.RequestError, detail:
+                        except (gdata.client.RequestError, detail):
                             # Skipping any errors and use Shared Contacts instead.
                             pass
                         # Checking if the Profiles API should be use for domain users
@@ -364,10 +366,10 @@ class ContactsManager(object):
         all_encoding = ["utf-8", "iso-8859-1", "iso-8859-2", 'iso-8859-15', 'iso-8859-3', "us-ascii", 'windows-1250',
                         'windows-1252', 'windows-1254', 'ibm861']
         encoding_index = 0
-        print "Detecting encoding of the CSV file..."
+        print ("Detecting encoding of the CSV file...")
         while csv_reader == None:
             next_encoding = all_encoding[encoding_index]
-            print "Trying %s" % (next_encoding)
+            print ("Trying %s" % (next_encoding))
             input_csv_file = open(import_csv_file_name, 'rt')
             csv_reader = UnicodeDictReader(input_csv_file, delimiter=',', encoding=next_encoding)
             try:
@@ -379,13 +381,14 @@ class ContactsManager(object):
                 input_csv_file.close()
                 encoding_index = encoding_index + 1
 
-        print "Correct encoding of the file is %s" % (next_encoding)
+        print ("Correct encoding of the file is %s" % (next_encoding))
         input_csv_file.close()
         input_csv_file = open(import_csv_file_name, 'rt')
         csv_reader = UnicodeDictReader(input_csv_file, delimiter=',', encoding=next_encoding)
 
-        operations_it = itertools.imap(CsvLineToOperation, enumerate(csv_reader))
-        operations_it = itertools.ifilter(None, operations_it)
+        entries = enumerate(csv_reader)
+        operations_it = map(CsvLineToOperation, entries)
+        operations_it = filter(None, operations_it)
 
         total_stats = ImportStats()
 
@@ -428,7 +431,7 @@ class ContactsManager(object):
             else:
                 Log('Querying %d contacts/profiles(s)...' % len(query_feed_profiles.entry))
                 queried_results_by_index = self._ExecuteBatch(query_feed)
-                queried_results_by_index_profiles = self._ExecuteBatchProfile(query_feed_profiles)
+                #queried_results_by_index_profiles = self._ExecuteBatchProfile(query_feed_profiles)
 
             # Second pass preparation
             mutate_feed = gdata.data.BatchFeed()
@@ -437,13 +440,13 @@ class ContactsManager(object):
                 # Contact
                 queried_result_contact = queried_results_by_index.get(index)
                 # Profile
-                queried_result_profiles = queried_results_by_index_profiles.get(index)
+                #queried_result_profiles = queried_results_by_index_profiles.get(index)
                 # if is a Contact then is not a Profile
-                if queried_result_contact and not queried_result_profiles.is_success:
+                if queried_result_contact:
                     queried_result_contact.PrintResult(action, contact_id, new_entry, '(Shared Contact)')
                 # if is a Profile then is not a Contact:
-                if queried_result_profiles and not queried_result_contact.is_success:
-                    queried_result_profiles.PrintResult(action, contact_id, new_entry, '(Profile)')
+                #if queried_result_profiles and not queried_result_contact.is_success:
+                #    queried_result_profiles.PrintResult(action, contact_id, new_entry, '(Profile)')
 
                 batch_id_string = str(index)
 
@@ -465,18 +468,18 @@ class ContactsManager(object):
                         mutate_feed.AddUpdate(entry=new_entry,
                                               batch_id_string=batch_id_string)
                     # Update Profile
-                    if queried_result_profiles and queried_result_profiles.is_success:
-                        CopyContactId(queried_result_profiles.entry, new_entry)
-                        mutate_feed_profiles.AddUpdate(entry=new_entry,
-                                                       batch_id_string=batch_id_string)
+                    #if queried_result_profiles and queried_result_profiles.is_success:
+                    #    CopyContactId(queried_result_profiles.entry, new_entry)
+                    #    mutate_feed_profiles.AddUpdate(entry=new_entry,
+                    #                                   batch_id_string=batch_id_string)
 
                 # DELETE is only supported by Contacts (Not supported by Profiles)
                 elif action == ACTION_DELETE:
-                    if queried_result_profiles and queried_result_profiles.is_success:
-                        queried_result_profiles.PrintResult(action, contact_id, new_entry,
-                                                            '(A Profile cannot be deleted - ignoring the entry)')
-                        ignored[0] += 1
-                    else:
+                    #if queried_result_profiles and queried_result_profiles.is_success:
+                    #    queried_result_profiles.PrintResult(action, contact_id, new_entry,
+                    #                                        '(A Profile cannot be deleted - ignoring the entry)')
+                    #    ignored[0] += 1
+                    #else:
                         chunk_stats.deleted_total += 1
                         if queried_result_contact and queried_result_contact.is_success:
                             mutate_feed.AddDelete(queried_result_contact.entry.GetEditLink().href,
@@ -546,9 +549,9 @@ class ContactsManager(object):
         """
         outlook_serializer = OutlookSerializer()
         csv_writer = outlook_serializer.CreateCsvWriter(csv_file)
-        csv_writer.writerows(itertools.imap(outlook_serializer.ContactEntryToFields,
+        csv_writer.writerows(map(outlook_serializer.ContactEntryToFields,
                                             contact_entries))
-        csv_writer.writerows(itertools.imap(outlook_serializer.ContactEntryToFields,
+        csv_writer.writerows(map(outlook_serializer.ContactEntryToFields,
                                             profile_entries))
         Log('### Exported.')
 
@@ -627,7 +630,7 @@ class ContactsManager(object):
 
     def DeleteAllContacts(self):
         """Empties the contact list. Asks for confirmation first."""
-        confirmation = raw_input(
+        confirmation = input(
             'Do you really want to delete all Shared Contact(s) of %s? [y/N] ' %
             self.contacts_client.contact_list)
         if confirmation.lower() != 'y':
@@ -670,7 +673,7 @@ class UTF8Recoder:
         self.reader = codecs.getreader(encoding)(f)
 
     def __iter__(self):
-        return self
+        yield self
 
     def next(self):
         return self.reader.next().encode("utf-8")
@@ -683,7 +686,7 @@ class UnicodeDictReader:
     """
 
     def __init__(self, f, delimiter=',', dialect=csv.excel, encoding="utf-8"):
-        f = UTF8Recoder(f, encoding)
+        #f = UTF8Recoder(f, encoding)
         self.reader = csv.DictReader(f, delimiter=delimiter, dialect=dialect)
 
     def next(self):
@@ -700,10 +703,10 @@ class UnicodeDictReader:
                     row[key] = newList
             else:
                 row[key] = ''
-        return row
+        yield row
 
     def __iter__(self):
-        return self
+        yield from self.reader
 
 
 class UnicodeDictWriter:
@@ -714,23 +717,22 @@ class UnicodeDictWriter:
 
     def __init__(self, f, fieldnames, delimiter=',', dialect=csv.excel, encoding="utf-8"):
         # Redirect output to a queue
-        self.queue = cStringIO.StringIO()
-        self.writer = csv.DictWriter(self.queue, fieldnames, delimiter=delimiter)
+        self.queue = io.StringIO()
+        self.writer = csv.DictWriter(self.queue, fieldnames, delimiter=delimiter, extrasaction='ignore')
         self.stream = f
         self.encoder = codecs.getincrementalencoder(encoding)()
 
     def writerow(self, row):
         rowEncodedCopy = {}
         for key in row:
-            if row[key] != None:
-                rowEncodedCopy[key] = row[key].encode("utf-8", "ignore")
-            else:
-                rowEncodedCopy[key] = row[key]
+            rowEncodedCopy[key] = row[key]
+
 
         self.writer.writerow(rowEncodedCopy)
         # Fetch UTF-8 output from the queue ...
         data = self.queue.getvalue()
-        data = data.decode("utf-8")
+
+        #data = data.encode("utf-8")
         # ... and reencode it into the target encoding
         data = self.encoder.encode(data)
         # write to the target stream
@@ -1099,7 +1101,7 @@ parameters in the command line."""
     if import_csv_file_name:
         try:
             Log('Outlook CSV file to import: %s' % import_csv_file_name)
-        except IOError, e:
+        except (IOError, e):
             parser.error('Unable to open %s\n%s\nPlease set the --import command-line'
                          ' option to a readable file.' % (import_csv_file_name, e))
 
@@ -1109,7 +1111,7 @@ parameters in the command line."""
                 csv_file = open(file_name, 'wb')
                 Log('%s as CSV to: %s' % (description, file_name))
                 return csv_file
-            except IOError, e:
+            except (IOError, e):
                 parser.error('Unable to open %s\n%s\nPlease set the --%s command-line'
                              ' option to a writable file.' % (file_name, option_name, e))
         else:
@@ -1141,6 +1143,7 @@ parameters in the command line."""
     # FIXME: Handle flow error
 
     # GData with access token
+    flow.user_agent = "" # default setting of none causes exception in gdata
     token = gdata.gauth.OAuth2Token(
         client_id=flow.client_id,
         client_secret=flow.client_secret,
